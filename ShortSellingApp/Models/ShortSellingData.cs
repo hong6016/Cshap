@@ -3,33 +3,37 @@ using System;
 namespace ShortSellingApp.Models
 {
     /// <summary>
-    /// CpSysDib.CpSvr7238 — 공매도 현황 (투자주체별) 1행 데이터
+    /// CpSysDib.CpSvr7238 [종목별 공매도 추이] 1행 데이터
+    ///
+    /// GetDataValue 필드
+    ///   0 거래일자       (ulong)
+    ///   1 종가           (ulong)
+    ///   2 전일대비       (long)
+    ///   3 전일대비율     (long)
+    ///   4 거래량         (long)
+    ///   5 공매도량       (ulong)
+    ///   6 공매도비중     (double, %)
+    ///   7 공매도거래대금 (ulong)
+    ///   8 평균가         (ulong)
+    ///   9 평균가대비     (long)
     /// </summary>
-    public class InvestorTradeData
+    public class ShortSellData
     {
-        public string StockCode  { get; set; }
-        public string StockName  { get; set; }
+        public string   StockCode    { get; set; }
+        public string   StockName    { get; set; }
+        public string   Exchange     { get; set; }  // A/K/N
 
-        // YYYYMMDD 문자열 / DateTime
-        public string   Date      { get; set; }
-        public DateTime DateValue { get; set; }
+        public string   Date         { get; set; }  // YYYYMMDD
+        public DateTime DateValue    { get; set; }
 
-        // GetDataValue 필드 0~13
-        public long Individual      { get; set; }   // 1: 개인
-        public long Foreigner       { get; set; }   // 2: 외국인
-        public long Institution     { get; set; }   // 3: 기관계
-        public long FinancialInvest { get; set; }   // 4: 금융투자
-        public long Insurance       { get; set; }   // 5: 보험
-        public long InvestTrust     { get; set; }   // 6: 투신
-        public long Bank            { get; set; }   // 7: 은행
-        public long OtherFinancial  { get; set; }   // 8: 기타금융
-        public long PensionFund     { get; set; }   // 9: 연기금
-        public long OtherCorp       { get; set; }   // 10: 기타법인
-        public long ForeignerEtc    { get; set; }   // 11: 외국인(기타)
-        public long PrivateEquity   { get; set; }   // 12: 사모펀드
-        public long Government      { get; set; }   // 13: 정부/지자체
-
-        // 데이터 단위 메모 ("순매수수량(주)" or "추정금액(백만원)")
-        public string Unit { get; set; }
+        public long     ClosePrice   { get; set; }  // 1: 종가
+        public long     PriceChange  { get; set; }  // 2: 전일대비
+        public double   ChangeRate   { get; set; }  // 3: 전일대비율(%)
+        public long     Volume       { get; set; }  // 4: 거래량
+        public long     ShortVolume  { get; set; }  // 5: 공매도량
+        public double   ShortRatio   { get; set; }  // 6: 공매도비중(%)
+        public long     ShortAmount  { get; set; }  // 7: 공매도거래대금
+        public long     AvgPrice     { get; set; }  // 8: 평균가
+        public long     AvgPriceDiff { get; set; }  // 9: 평균가대비
     }
 }

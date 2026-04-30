@@ -9,21 +9,19 @@ using ShortSellingApp.Services;
 namespace ShortSellingApp.Forms
 {
     /// <summary>
-    /// 공매도 현황 데이터 수집 폼 (CpSysDib.CpSvr7238)
+    /// 종목별 공매도 추이 수집 폼 (CpSysDib.CpSvr7238)
     /// </summary>
     public class ShortSellingCollectForm : Form
     {
         private readonly DaishinApiService _api = new DaishinApiService();
-        private List<InvestorTradeData>    _collectedData = new List<InvestorTradeData>();
+        private List<ShortSellData> _collectedData = new List<ShortSellData>();
 
-        // ── 컨트롤 ──────────────────────────────────────────────────
         private TextBox        txtStockCode;
         private TextBox        txtStockName;
         private Button         btnSearchName;
         private DateTimePicker dtpFrom;
         private DateTimePicker dtpTo;
-        private ComboBox       cmbTradeType;    // 매매구분
-        private ComboBox       cmbDataType;     // 데이터구분
+        private ComboBox       cmbExchange;
         private Button         btnCollect;
         private Button         btnViewChart;
         private Button         btnExportCsv;
@@ -38,23 +36,20 @@ namespace ShortSellingApp.Forms
             CheckConnection();
         }
 
-        // ────────────────────────────────────────────────────────────
-        // UI 구성
-        // ────────────────────────────────────────────────────────────
         private void InitializeComponent()
         {
-            this.Text          = "공매도 현황 수집 (투자주체별) - 대신플러스 CpSvr7238";
-            this.Size          = new Size(1200, 720);
-            this.MinimumSize   = new Size(1000, 600);
+            this.Text          = "종목별 공매도 추이 수집 - 대신플러스 [CpSvr7238]";
+            this.Size          = new Size(1100, 700);
+            this.MinimumSize   = new Size(900, 580);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Font          = new Font("맑은 고딕", 9f);
             this.BackColor     = Color.WhiteSmoke;
 
-            // ── 상단 패널 ─────────────────────────────────────────
+            // ── 상단 입력 패널 ────────────────────────────────────
             var panelTop = new Panel
             {
                 Dock      = DockStyle.Top,
-                Height    = 122,
+                Height    = 110,
                 BackColor = Color.White,
                 Padding   = new Padding(12),
             };
@@ -62,16 +57,16 @@ namespace ShortSellingApp.Forms
                 e.Graphics.DrawLine(Pens.LightGray, 0, panelTop.Height - 1,
                                     panelTop.Width, panelTop.Height - 1);
 
-            // 연결 상태
             lblConnectionStatus = new Label
             {
                 AutoSize  = true,
                 Font      = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
                 Location  = new Point(14, 10),
             };
+            panelTop.Controls.Add(lblConnectionStatus);
 
-            // ── 행 1: 종목 ─────────────────────────────────────
-            MakeLabel("종목코드:", 14, 38, panelTop);
+            // 행 1: 종목코드
+            AddLabel("종목코드:", 14, 38, panelTop);
             txtStockCode = new TextBox
             {
                 Location        = new Point(82, 36),
@@ -85,7 +80,7 @@ namespace ShortSellingApp.Forms
             };
             panelTop.Controls.Add(txtStockCode);
 
-            btnSearchName = MakeButton("종목명 조회", new Point(175, 35), 82, Color.SteelBlue, panelTop);
+            btnSearchName = AddButton("종목명 조회", new Point(175, 35), 82, Color.SteelBlue, panelTop);
             btnSearchName.Click += BtnSearchName_Click;
 
             txtStockName = new TextBox
@@ -97,8 +92,8 @@ namespace ShortSellingApp.Forms
             };
             panelTop.Controls.Add(txtStockName);
 
-            // ── 행 2: 조회 기간 + 옵션 ────────────────────────
-            MakeLabel("시작일:", 14, 72, panelTop);
+            // 행 2: 조회 기간 + 거래소구분
+            AddLabel("시작일:", 14, 72, panelTop);
             dtpFrom = new DateTimePicker
             {
                 Location = new Point(60, 70),
@@ -108,7 +103,7 @@ namespace ShortSellingApp.Forms
             };
             panelTop.Controls.Add(dtpFrom);
 
-            MakeLabel("종료일:", 183, 72, panelTop);
+            AddLabel("종료일:", 183, 72, panelTop);
             dtpTo = new DateTimePicker
             {
                 Location = new Point(229, 70),
@@ -118,41 +113,29 @@ namespace ShortSellingApp.Forms
             };
             panelTop.Controls.Add(dtpTo);
 
-            MakeLabel("매매구분:", 358, 72, panelTop);
-            cmbTradeType = new ComboBox
+            AddLabel("거래소:", 358, 72, panelTop);
+            cmbExchange = new ComboBox
             {
-                Location      = new Point(420, 69),
-                Width         = 100,
+                Location      = new Point(400, 69),
+                Width         = 90,
                 DropDownStyle = ComboBoxStyle.DropDownList,
             };
-            cmbTradeType.Items.AddRange(new object[] { "순매수", "매매비중" });
-            cmbTradeType.SelectedIndex = 0;
-            panelTop.Controls.Add(cmbTradeType);
+            cmbExchange.Items.AddRange(new object[] { "KRX", "NXT", "전체" });
+            cmbExchange.SelectedIndex = 0;
+            panelTop.Controls.Add(cmbExchange);
 
-            MakeLabel("데이터구분:", 530, 72, panelTop);
-            cmbDataType = new ComboBox
-            {
-                Location      = new Point(608, 69),
-                Width         = 130,
-                DropDownStyle = ComboBoxStyle.DropDownList,
-            };
-            cmbDataType.Items.AddRange(new object[] { "공매도수량(주)", "공매도금액(백만원)" });
-            cmbDataType.SelectedIndex = 0;
-            panelTop.Controls.Add(cmbDataType);
-
-            // ── 버튼 ───────────────────────────────────────────
-            btnCollect = MakeButton("데이터 수집", new Point(756, 68), 100, Color.SeaGreen, panelTop);
+            btnCollect = AddButton("데이터 수집", new Point(502, 68), 100, Color.SeaGreen, panelTop);
             btnCollect.Click += BtnCollect_Click;
 
-            btnViewChart = MakeButton("그래프 보기", new Point(864, 68), 100, Color.DarkSlateGray, panelTop);
+            btnViewChart = AddButton("그래프 보기", new Point(610, 68), 100, Color.DarkSlateGray, panelTop);
             btnViewChart.Enabled = false;
-            btnViewChart.Click   += BtnViewChart_Click;
+            btnViewChart.Click  += BtnViewChart_Click;
 
-            btnExportCsv = MakeButton("CSV 내보내기", new Point(972, 68), 108, Color.SaddleBrown, panelTop);
+            btnExportCsv = AddButton("CSV 내보내기", new Point(718, 68), 108, Color.SaddleBrown, panelTop);
             btnExportCsv.Enabled = false;
-            btnExportCsv.Click   += BtnExportCsv_Click;
+            btnExportCsv.Click  += BtnExportCsv_Click;
 
-            // ── ProgressBar ───────────────────────────────────
+            // ── ProgressBar ───────────────────────────────────────
             progressBar = new ProgressBar
             {
                 Dock                  = DockStyle.Top,
@@ -162,7 +145,7 @@ namespace ShortSellingApp.Forms
                 Visible               = false,
             };
 
-            // ── DataGridView ──────────────────────────────────
+            // ── DataGridView ──────────────────────────────────────
             dgvData = new DataGridView
             {
                 Dock                    = DockStyle.Fill,
@@ -175,9 +158,7 @@ namespace ShortSellingApp.Forms
                 BorderStyle             = BorderStyle.None,
                 GridColor               = Color.LightGray,
                 AlternatingRowsDefaultCellStyle = new DataGridViewCellStyle
-                {
-                    BackColor = Color.AliceBlue,
-                },
+                    { BackColor = Color.AliceBlue },
                 ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
                 {
                     Font      = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
@@ -189,12 +170,11 @@ namespace ShortSellingApp.Forms
             };
             BuildGridColumns();
 
-            // ── StatusStrip ───────────────────────────────────
+            // ── StatusStrip ───────────────────────────────────────
             var statusStrip = new StatusStrip { BackColor = Color.White };
             lblStatus = new ToolStripStatusLabel("준비") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
             statusStrip.Items.Add(lblStatus);
 
-            // ── 레이아웃 ──────────────────────────────────────
             this.Controls.Add(dgvData);
             this.Controls.Add(progressBar);
             this.Controls.Add(panelTop);
@@ -205,42 +185,32 @@ namespace ShortSellingApp.Forms
         {
             dgvData.Columns.Clear();
 
-            var rightFmt = new Func<string, int, DataGridViewTextBoxColumn>((hdr, fill) =>
-                new DataGridViewTextBoxColumn
-                {
-                    HeaderText = hdr,
-                    DefaultCellStyle = new DataGridViewCellStyle
-                    {
-                        Alignment = DataGridViewContentAlignment.MiddleRight,
-                        Format    = "N0",
-                    },
-                    FillWeight = fill,
-                });
-
-            dgvData.Columns.Add(new DataGridViewTextBoxColumn
+            var defs = new (string Header, string Fmt, int Fill, DataGridViewContentAlignment Align)[]
             {
-                HeaderText = "날짜",
-                DefaultCellStyle = new DataGridViewCellStyle
-                { Alignment = DataGridViewContentAlignment.MiddleCenter },
-                FillWeight = 70,
-            });
-            dgvData.Columns.Add(rightFmt("개인",       80));
-            dgvData.Columns.Add(rightFmt("외국인",     80));
-            dgvData.Columns.Add(rightFmt("기관계",     80));
-            dgvData.Columns.Add(rightFmt("금융투자",   80));
-            dgvData.Columns.Add(rightFmt("보험",       70));
-            dgvData.Columns.Add(rightFmt("투신",       70));
-            dgvData.Columns.Add(rightFmt("은행",       70));
-            dgvData.Columns.Add(rightFmt("기타금융",   75));
-            dgvData.Columns.Add(rightFmt("연기금",     75));
-            dgvData.Columns.Add(rightFmt("기타법인",   75));
-            dgvData.Columns.Add(rightFmt("사모펀드",   75));
-            dgvData.Columns.Add(rightFmt("정부/지자체", 85));
+                ("날짜",             "",    70,  DataGridViewContentAlignment.MiddleCenter),
+                ("종가(원)",         "N0",  80,  DataGridViewContentAlignment.MiddleRight),
+                ("전일대비",         "N0",  75,  DataGridViewContentAlignment.MiddleRight),
+                ("전일대비율(%)",    "F2",  85,  DataGridViewContentAlignment.MiddleRight),
+                ("거래량(주)",       "N0",  95,  DataGridViewContentAlignment.MiddleRight),
+                ("공매도량(주)",     "N0",  95,  DataGridViewContentAlignment.MiddleRight),
+                ("공매도비중(%)",    "F2",  85,  DataGridViewContentAlignment.MiddleRight),
+                ("공매도거래대금(원)", "N0", 120, DataGridViewContentAlignment.MiddleRight),
+                ("평균가(원)",       "N0",  80,  DataGridViewContentAlignment.MiddleRight),
+                ("평균가대비",       "N0",  80,  DataGridViewContentAlignment.MiddleRight),
+            };
+
+            foreach (var (header, fmt, fill, align) in defs)
+            {
+                dgvData.Columns.Add(new DataGridViewTextBoxColumn
+                {
+                    HeaderText       = header,
+                    DefaultCellStyle = new DataGridViewCellStyle { Format = fmt, Alignment = align },
+                    FillWeight       = fill,
+                });
+            }
         }
 
-        // ────────────────────────────────────────────────────────────
-        // 이벤트
-        // ────────────────────────────────────────────────────────────
+        // ── 이벤트 ───────────────────────────────────────────────────
         private void CheckConnection()
         {
             bool ok = _api.IsConnected();
@@ -273,21 +243,19 @@ namespace ShortSellingApp.Forms
 
             SetCollecting(true);
 
-            string fromDate    = dtpFrom.Value.ToString("yyyyMMdd");
-            string toDate      = dtpTo.Value.ToString("yyyyMMdd");
-            char   tradeType   = cmbTradeType.SelectedIndex == 0 ? '0' : '1';
-            char   dataType    = cmbDataType.SelectedIndex == 0  ? '1' : '2';
-            var    progress    = new Progress<string>(msg => SetStatus(msg));
+            string fromDate  = dtpFrom.Value.ToString("yyyyMMdd");
+            string toDate    = dtpTo.Value.ToString("yyyyMMdd");
+            char   exchange  = cmbExchange.SelectedIndex == 0 ? 'K'
+                             : cmbExchange.SelectedIndex == 1 ? 'N' : 'A';
+            var    progress  = new Progress<string>(msg => lblStatus.Text = msg);
 
-            // STA 스레드 필수 (CYBOS Plus COM)
             var thread = new Thread(() =>
             {
-                List<InvestorTradeData> data = null;
+                List<ShortSellData> data = null;
                 Exception ex = null;
                 try
                 {
-                    data = _api.GetInvestorTradeData(
-                        code, fromDate, toDate, tradeType, 0, dataType, progress);
+                    data = _api.GetShortSellData(code, fromDate, toDate, exchange, progress);
                 }
                 catch (Exception err) { ex = err; }
 
@@ -298,7 +266,7 @@ namespace ShortSellingApp.Forms
                     {
                         MessageBox.Show($"데이터 수집 실패:\n{ex.Message}", "오류",
                             MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        SetStatus("오류 발생");
+                        lblStatus.Text = "오류 발생";
                         return;
                     }
 
@@ -306,8 +274,7 @@ namespace ShortSellingApp.Forms
                     PopulateGrid(data);
                     btnViewChart.Enabled = data.Count > 0;
                     btnExportCsv.Enabled = data.Count > 0;
-                    SetStatus($"공매도 수집 완료 — {data.Count}건 ({fromDate} ~ {toDate})  " +
-                              $"단위: {(dataType == '1' ? "공매도수량(주)" : "공매도금액(백만원)")}");
+                    lblStatus.Text = $"수집 완료 — {data.Count}건  ({fromDate} ~ {toDate})";
 
                     if (string.IsNullOrEmpty(txtStockName.Text) || txtStockName.Text == code)
                         txtStockName.Text = _api.GetStockName(code);
@@ -335,7 +302,7 @@ namespace ShortSellingApp.Forms
             {
                 Title    = "CSV 내보내기",
                 Filter   = "CSV 파일 (*.csv)|*.csv",
-                FileName = $"공매도현황_{txtStockCode.Text.Trim()}_{DateTime.Today:yyyyMMdd}.csv",
+                FileName = $"공매도추이_{txtStockCode.Text.Trim()}_{DateTime.Today:yyyyMMdd}.csv",
             })
             {
                 if (dlg.ShowDialog() != DialogResult.OK) return;
@@ -344,18 +311,16 @@ namespace ShortSellingApp.Forms
                     using (var sw = new System.IO.StreamWriter(
                         dlg.FileName, false, System.Text.Encoding.UTF8))
                     {
-                        string unit = _collectedData.Count > 0 ? _collectedData[0].Unit : "";
-                        sw.WriteLine($"날짜,개인(공매도),외국인(공매도),기관계(공매도),금융투자,보험,투신,은행," +
-                                     $"기타금융,연기금,기타법인,사모펀드,정부/지자체  [{unit}]");
+                        sw.WriteLine("날짜,종가,전일대비,전일대비율(%),거래량," +
+                                     "공매도량,공매도비중(%),공매도거래대금,평균가,평균가대비");
                         foreach (var d in _collectedData)
-                            sw.WriteLine($"{d.Date},{d.Individual},{d.Foreigner}," +
-                                         $"{d.Institution},{d.FinancialInvest},{d.Insurance}," +
-                                         $"{d.InvestTrust},{d.Bank},{d.OtherFinancial}," +
-                                         $"{d.PensionFund},{d.OtherCorp},{d.PrivateEquity},{d.Government}");
+                            sw.WriteLine($"{d.Date},{d.ClosePrice},{d.PriceChange}," +
+                                         $"{d.ChangeRate:F2},{d.Volume},{d.ShortVolume}," +
+                                         $"{d.ShortRatio:F2},{d.ShortAmount},{d.AvgPrice},{d.AvgPriceDiff}");
                     }
                     MessageBox.Show("CSV 파일이 저장되었습니다.", "완료",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    SetStatus($"CSV 저장: {dlg.FileName}");
+                    lblStatus.Text = $"CSV 저장: {dlg.FileName}";
                 }
                 catch (Exception ex)
                 {
@@ -365,19 +330,28 @@ namespace ShortSellingApp.Forms
             }
         }
 
-        // ────────────────────────────────────────────────────────────
-        // 헬퍼
-        // ────────────────────────────────────────────────────────────
-        private void PopulateGrid(List<InvestorTradeData> data)
+        // ── 헬퍼 ─────────────────────────────────────────────────────
+        private void PopulateGrid(List<ShortSellData> data)
         {
             dgvData.Rows.Clear();
             foreach (var d in data)
             {
-                dgvData.Rows.Add(d.Date,
-                    d.Individual, d.Foreigner, d.Institution,
-                    d.FinancialInvest, d.Insurance, d.InvestTrust, d.Bank,
-                    d.OtherFinancial, d.PensionFund, d.OtherCorp,
-                    d.PrivateEquity, d.Government);
+                int idx = dgvData.Rows.Add(
+                    d.Date, d.ClosePrice, d.PriceChange, d.ChangeRate,
+                    d.Volume, d.ShortVolume, d.ShortRatio,
+                    d.ShortAmount, d.AvgPrice, d.AvgPriceDiff);
+
+                // 공매도비중 5% 이상 행 강조
+                if (d.ShortRatio >= 5.0)
+                {
+                    dgvData.Rows[idx].DefaultCellStyle.BackColor = Color.MistyRose;
+                    dgvData.Rows[idx].DefaultCellStyle.ForeColor = Color.DarkRed;
+                }
+                // 전일대비 색상
+                var cell = dgvData.Rows[idx].Cells[2];
+                cell.Style.ForeColor = d.PriceChange > 0 ? Color.Crimson
+                                     : d.PriceChange < 0 ? Color.DodgerBlue
+                                     : Color.Black;
             }
         }
 
@@ -388,14 +362,10 @@ namespace ShortSellingApp.Forms
             progressBar.Visible  = on;
         }
 
-        private void SetStatus(string msg) => lblStatus.Text = msg;
-
-        private static void MakeLabel(string text, int x, int y, Control parent)
-        {
+        private static void AddLabel(string text, int x, int y, Control parent) =>
             parent.Controls.Add(new Label { Text = text, Location = new Point(x, y), AutoSize = true });
-        }
 
-        private static Button MakeButton(string text, Point loc, int width, Color back, Control parent)
+        private static Button AddButton(string text, Point loc, int width, Color back, Control parent)
         {
             var btn = new Button
             {

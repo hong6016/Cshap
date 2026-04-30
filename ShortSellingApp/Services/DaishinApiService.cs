@@ -12,8 +12,7 @@ namespace ShortSellingApp.Services
     /// </summary>
     public class DaishinApiService
     {
-        // API 연속 호출 시 최소 대기 (초당 최대 5회 제한)
-        private const int RequestDelayMs = 250;
+        private const int RequestDelayMs = 250;  // API 호출 간격 (초당 5회 제한)
 
         // ── 연결 상태 ────────────────────────────────────────────────
         public bool IsConnected()
@@ -45,40 +44,38 @@ namespace ShortSellingApp.Services
             catch { return stockCode; }
         }
 
-        // ── 공매도 현황 수집 (CpSysDib.CpSvr7238) ───────────────────────
-        //
-        // ※ 아래 필드 정의는 CpSvr7238 기준 초기값입니다.
-        //   실제 CpSvr7238 입출력 필드는 CYBOS Plus HTS 도움말에서
-        //   "CpSvr7238" 검색 후 확인하여 수정하세요.
+        // ── 종목별 공매도 추이 수집 (CpSysDib.CpSvr7238) ────────────
         //
         // SetInputValue
-        //   0  string  종목코드          예) "A005930"
-        //   1  short   기간구분          0=직접입력, 1=1개월, 2=2개월,
-        //                                3=3개월, 4=6개월, 5=최근5일, 6=일별
-        //   2  long    시작일자          YYYYMMDD (기간구분=0 일 때)
-        //   3  long    종료일자          YYYYMMDD (기간구분=0 일 때)
-        //   4  char    매매구분          '0'=순매수, '1'=매매비중
-        //   5  short   투자자구분        0=전체, 1=개인, 2=외국인, 3=기관계, ...
-        //   6  char    데이터구분        '1'=수량(주), '2'=금액(백만원)
+        //   0  string  순매도 종목코드   예) "A005930"
+        //   1  char    거래소구분        'A'=전체, 'K'=KRX(default), 'N'=NXT
         //
-        // GetHeaderValue(3) → 행 수
+        // GetHeaderValue
+        //   0  long    수신갯수
+        //   1  char    거래소구분(A/K/N)
         //
-        // GetDataValue(field, row)
-        //   0  날짜       1  개인      2  외국인   3  기관계
-        //   4  금융투자   5  보험      6  투신     7  은행
-        //   8  기타금융   9  연기금   10  기타법인 11  외국인기타
-        //  12  사모펀드  13  정부/지자체
+        // GetDataValue(field, index)
+        //   0  ulong   거래일자
+        //   1  ulong   종가
+        //   2  long    전일대비
+        //   3  long    전일대비율
+        //   4  long    거래량
+        //   5  ulong   공매도량
+        //   6  double  공매도비중(%)
+        //   7  ulong   공매도거래대금
+        //   8  ulong   평균가
+        //   9  long    평균가대비
+        //
+        // 연속여부: O (Continue 프로퍼티로 추가 데이터 수신)
         // ─────────────────────────────────────────────────────────────
-        public List<InvestorTradeData> GetInvestorTradeData(
+        public List<ShortSellData> GetShortSellData(
             string stockCode,
             string fromDate,
             string toDate,
-            char   tradeType   = '0',   // '0'=순매수, '1'=매매비중
-            short  investorType = 0,    // 0=전체
-            char   dataType    = '1',   // '1'=수량, '2'=금액
+            char   exchange = 'K',
             IProgress<string> progress = null)
         {
-            var result = new List<InvestorTradeData>();
+            var result = new List<ShortSellData>();
 
             Type t = Type.GetTypeFromProgID("CpSysDib.CpSvr7238");
             if (t == null)
@@ -89,56 +86,67 @@ namespace ShortSellingApp.Services
             object obj = Activator.CreateInstance(t);
             try
             {
-                progress?.Report($"[{stockCode}] 공매도 현황 요청 CpSvr7238 ({fromDate}~{toDate}) ...");
-
                 SetInput(obj, 0, stockCode);
-                SetInput(obj, 1, (short)0);      // 직접입력
-                SetInput(obj, 2, long.Parse(fromDate));
-                SetInput(obj, 3, long.Parse(toDate));
-                SetInput(obj, 4, tradeType);
-                SetInput(obj, 5, investorType);
-                SetInput(obj, 6, dataType);
+                SetInput(obj, 1, exchange);
 
-                BlockRequest(obj);
-                Thread.Sleep(RequestDelayMs);
+                string   stockName = GetStockName(stockCode);
+                DateTime dtFrom    = DateTime.ParseExact(fromDate, "yyyyMMdd", null);
+                DateTime dtTo      = DateTime.ParseExact(toDate,   "yyyyMMdd", null);
 
-                int count = Convert.ToInt32(GetHeader(obj, 3));
-                progress?.Report($"[{stockCode}] {count}건 수신 중 ...");
+                progress?.Report($"[{stockCode}] 공매도 추이 요청 ({fromDate}~{toDate}) ...");
 
-                string unit      = dataType == '1' ? "순매수수량(주)" : "추정금액(백만원)";
-                string stockName = GetStockName(stockCode);
+                int iteration = 0;
+                const int MaxIterations = 200;
 
-                for (int i = 0; i < count; i++)
+                while (iteration++ < MaxIterations)
                 {
-                    int    rawDate = Convert.ToInt32(GetData(obj, 0, i));
-                    string dateStr = rawDate.ToString();
-                    DateTime dt   = DateTime.ParseExact(dateStr, "yyyyMMdd", null);
+                    BlockRequest(obj);
+                    Thread.Sleep(RequestDelayMs);
 
-                    result.Add(new InvestorTradeData
+                    int count = Convert.ToInt32(GetHeader(obj, 0));
+                    if (count == 0) break;
+
+                    progress?.Report($"[{stockCode}] {iteration}차 수신 {count}건 파싱 중 ...");
+
+                    bool reachedFrom = false;
+                    for (int i = 0; i < count; i++)
                     {
-                        StockCode      = stockCode,
-                        StockName      = stockName,
-                        Date           = dateStr,
-                        DateValue      = dt,
-                        Unit           = unit,
-                        Individual     = Convert.ToInt64(GetData(obj, 1,  i)),
-                        Foreigner      = Convert.ToInt64(GetData(obj, 2,  i)),
-                        Institution    = Convert.ToInt64(GetData(obj, 3,  i)),
-                        FinancialInvest= Convert.ToInt64(GetData(obj, 4,  i)),
-                        Insurance      = Convert.ToInt64(GetData(obj, 5,  i)),
-                        InvestTrust    = Convert.ToInt64(GetData(obj, 6,  i)),
-                        Bank           = Convert.ToInt64(GetData(obj, 7,  i)),
-                        OtherFinancial = Convert.ToInt64(GetData(obj, 8,  i)),
-                        PensionFund    = Convert.ToInt64(GetData(obj, 9,  i)),
-                        OtherCorp      = Convert.ToInt64(GetData(obj, 10, i)),
-                        ForeignerEtc   = Convert.ToInt64(GetData(obj, 11, i)),
-                        PrivateEquity  = Convert.ToInt64(GetData(obj, 12, i)),
-                        Government     = Convert.ToInt64(GetData(obj, 13, i)),
-                    });
+                        string   dateStr = Convert.ToUInt64(GetData(obj, 0, i)).ToString();
+                        DateTime dt      = DateTime.ParseExact(dateStr, "yyyyMMdd", null);
+
+                        if (dt < dtFrom) { reachedFrom = true; break; }
+                        if (dt > dtTo)   continue;
+
+                        result.Add(new ShortSellData
+                        {
+                            StockCode    = stockCode,
+                            StockName    = stockName,
+                            Exchange     = exchange.ToString(),
+                            Date         = dateStr,
+                            DateValue    = dt,
+                            ClosePrice   = Convert.ToInt64(GetData(obj, 1, i)),
+                            PriceChange  = Convert.ToInt64(GetData(obj, 2, i)),
+                            ChangeRate   = Convert.ToDouble(GetData(obj, 3, i)),
+                            Volume       = Convert.ToInt64(GetData(obj, 4, i)),
+                            ShortVolume  = Convert.ToInt64(GetData(obj, 5, i)),
+                            ShortRatio   = Convert.ToDouble(GetData(obj, 6, i)),
+                            ShortAmount  = Convert.ToInt64(GetData(obj, 7, i)),
+                            AvgPrice     = Convert.ToInt64(GetData(obj, 8, i)),
+                            AvgPriceDiff = Convert.ToInt64(GetData(obj, 9, i)),
+                        });
+                    }
+
+                    if (reachedFrom) break;
+
+                    // 연속 데이터 여부 확인
+                    bool canContinue = false;
+                    try { canContinue = Convert.ToBoolean(GetProp(obj, "Continue")); }
+                    catch { }
+                    if (!canContinue) break;
                 }
 
                 result.Sort((a, b) => a.DateValue.CompareTo(b.DateValue));
-                progress?.Report($"[{stockCode}] 완료 ({result.Count}건)");
+                progress?.Report($"[{stockCode}] 완료 — {result.Count}건");
             }
             finally
             {
@@ -160,11 +168,13 @@ namespace ShortSellingApp.Services
 
         private static object GetHeader(object obj, int field) =>
             obj.GetType().InvokeMember("GetHeaderValue",
-                System.Reflection.BindingFlags.InvokeMethod, null, obj, new object[] { field });
+                System.Reflection.BindingFlags.InvokeMethod, null, obj,
+                new object[] { field });
 
         private static object GetData(object obj, int field, int row) =>
             obj.GetType().InvokeMember("GetDataValue",
-                System.Reflection.BindingFlags.InvokeMethod, null, obj, new object[] { field, row });
+                System.Reflection.BindingFlags.InvokeMethod, null, obj,
+                new object[] { field, row });
 
         private static object GetProp(object obj, string prop) =>
             obj.GetType().InvokeMember(prop,
