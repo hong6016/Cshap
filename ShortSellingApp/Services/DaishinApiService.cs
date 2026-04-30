@@ -12,12 +12,10 @@ namespace ShortSellingApp.Services
     /// </summary>
     public class DaishinApiService
     {
-        // BlockRequest 연속 호출 시 최소 대기 (API 제한: 초당 최대 5회)
+        // API 연속 호출 시 최소 대기 (초당 최대 5회 제한)
         private const int RequestDelayMs = 250;
 
-        // ──────────────────────────────────────────────────────────────
-        // 연결 상태 확인
-        // ──────────────────────────────────────────────────────────────
+        // ── 연결 상태 ────────────────────────────────────────────────
         public bool IsConnected()
         {
             try
@@ -25,110 +23,120 @@ namespace ShortSellingApp.Services
                 Type t = Type.GetTypeFromProgID("CpUtil.CpCybos");
                 if (t == null) return false;
                 object obj = Activator.CreateInstance(t);
-                int state = (int)Invoke(obj, "IsConnect");
+                int state  = (int)GetProp(obj, "IsConnect");
                 Release(obj);
                 return state == 1;
             }
-            catch
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
-        // ──────────────────────────────────────────────────────────────
-        // 종목코드 → 종목명
-        // ──────────────────────────────────────────────────────────────
+        // ── 종목코드 → 종목명 ────────────────────────────────────────
         public string GetStockName(string stockCode)
         {
             try
             {
                 Type t = Type.GetTypeFromProgID("CpUtil.CpStockCode");
                 if (t == null) return stockCode;
-                object obj = Activator.CreateInstance(t);
-                string name = InvokeMethod(obj, "CodeToName", stockCode)?.ToString() ?? stockCode;
+                object obj  = Activator.CreateInstance(t);
+                string name = CallMethod(obj, "CodeToName", stockCode)?.ToString() ?? stockCode;
                 Release(obj);
                 return name;
             }
-            catch
-            {
-                return stockCode;
-            }
+            catch { return stockCode; }
         }
 
-        // ──────────────────────────────────────────────────────────────
-        // 공매도 현황 수집  (CpSysDib.CpSvr8562)
+        // ── 투자주체별 매매현황 수집 (CpSysDib.CpSvr7254) ───────────
         //
-        // 입력
-        //   0 : 종목코드  (예: "A005930")
-        //   1 : 조회시작일 (YYYYMMDD)
-        //   2 : 조회종료일 (YYYYMMDD)
-        //   3 : 최대조회수
+        // SetInputValue
+        //   0  string  종목코드          예) "A005930"
+        //   1  short   기간구분          0=직접입력, 1=1개월, 2=2개월,
+        //                                3=3개월, 4=6개월, 5=최근5일, 6=일별
+        //   2  long    시작일자          YYYYMMDD (기간구분=0 일 때)
+        //   3  long    종료일자          YYYYMMDD (기간구분=0 일 때)
+        //   4  char    매매구분          '0'=순매수, '1'=매매비중
+        //   5  short   투자자구분        0=전체, 1=개인, 2=외국인, 3=기관계,
+        //                                4=금융투자, 5=보험, 6=투신, 7=은행,
+        //                                8=기타금융, 9=연기금, 10=기타법인,
+        //                                11=외국인기타, 12=사모펀드, 13=정부/지자체
+        //   6  char    데이터구분        '1'=순매수수량(주), '2'=추정금액(백만원)
         //
-        // 헤더
-        //   0 : 종목코드
-        //   1 : 조회갯수
+        // GetHeaderValue(3) → 행 수
         //
-        // 데이터 필드
-        //   0 : 날짜           (int,    YYYYMMDD)
-        //   1 : 공매도거래량    (long,   주)
-        //   2 : 공매도거래대금  (long,   원)
-        //   3 : 공매도비중      (double, %)
-        //   4 : 종가            (int,    원)
-        //   5 : 거래량          (long,   주)
-        // ──────────────────────────────────────────────────────────────
-        public List<ShortSellingData> GetShortSellingData(
-            string stockCode, string fromDate, string toDate,
-            int maxCount = 2000, IProgress<string> progress = null)
+        // GetDataValue(field, row)
+        //   0  날짜       1  개인      2  외국인   3  기관계
+        //   4  금융투자   5  보험      6  투신     7  은행
+        //   8  기타금융   9  연기금   10  기타법인 11  외국인기타
+        //  12  사모펀드  13  정부/지자체
+        // ─────────────────────────────────────────────────────────────
+        public List<InvestorTradeData> GetInvestorTradeData(
+            string stockCode,
+            string fromDate,
+            string toDate,
+            char   tradeType   = '0',   // '0'=순매수, '1'=매매비중
+            short  investorType = 0,    // 0=전체
+            char   dataType    = '1',   // '1'=수량, '2'=금액
+            IProgress<string> progress = null)
         {
-            var result = new List<ShortSellingData>();
+            var result = new List<InvestorTradeData>();
 
-            Type t = Type.GetTypeFromProgID("CpSysDib.CpSvr8562");
+            Type t = Type.GetTypeFromProgID("CpSysDib.CpSvr7254");
             if (t == null)
                 throw new InvalidOperationException(
-                    "CpSysDib.CpSvr8562 COM 오브젝트를 찾을 수 없습니다.\n" +
+                    "CpSysDib.CpSvr7254 COM 오브젝트를 찾을 수 없습니다.\n" +
                     "CYBOS Plus HTS가 실행 중인지 확인하십시오.");
 
             object obj = Activator.CreateInstance(t);
             try
             {
-                progress?.Report($"[{stockCode}] 공매도 데이터 요청 중 ({fromDate} ~ {toDate}) ...");
+                progress?.Report($"[{stockCode}] 투자주체별 매매현황 요청 ({fromDate}~{toDate}) ...");
 
-                SetInputValue(obj, 0, stockCode);
-                SetInputValue(obj, 1, fromDate);
-                SetInputValue(obj, 2, toDate);
-                SetInputValue(obj, 3, maxCount);
+                SetInput(obj, 0, stockCode);
+                SetInput(obj, 1, (short)0);      // 직접입력
+                SetInput(obj, 2, long.Parse(fromDate));
+                SetInput(obj, 3, long.Parse(toDate));
+                SetInput(obj, 4, tradeType);
+                SetInput(obj, 5, investorType);
+                SetInput(obj, 6, dataType);
 
                 BlockRequest(obj);
                 Thread.Sleep(RequestDelayMs);
 
-                int count = Convert.ToInt32(GetHeaderValue(obj, 1));
-                progress?.Report($"[{stockCode}] 수신 {count}건 파싱 중 ...");
+                int count = Convert.ToInt32(GetHeader(obj, 3));
+                progress?.Report($"[{stockCode}] {count}건 수신 중 ...");
 
+                string unit      = dataType == '1' ? "순매수수량(주)" : "추정금액(백만원)";
                 string stockName = GetStockName(stockCode);
 
                 for (int i = 0; i < count; i++)
                 {
-                    int rawDate  = Convert.ToInt32(GetDataValue(obj, 0, i));
+                    int    rawDate = Convert.ToInt32(GetData(obj, 0, i));
                     string dateStr = rawDate.ToString();
-                    DateTime dt = DateTime.ParseExact(dateStr, "yyyyMMdd", null);
+                    DateTime dt   = DateTime.ParseExact(dateStr, "yyyyMMdd", null);
 
-                    result.Add(new ShortSellingData
+                    result.Add(new InvestorTradeData
                     {
-                        StockCode   = stockCode,
-                        StockName   = stockName,
-                        Date        = dateStr,
-                        DateValue   = dt,
-                        ShortVolume = Convert.ToInt64(GetDataValue(obj, 1, i)),
-                        ShortAmount = Convert.ToInt64(GetDataValue(obj, 2, i)),
-                        ShortRatio  = Convert.ToDouble(GetDataValue(obj, 3, i)),
-                        ClosePrice  = Convert.ToInt32(GetDataValue(obj, 4, i)),
-                        TotalVolume = Convert.ToInt64(GetDataValue(obj, 5, i)),
+                        StockCode      = stockCode,
+                        StockName      = stockName,
+                        Date           = dateStr,
+                        DateValue      = dt,
+                        Unit           = unit,
+                        Individual     = Convert.ToInt64(GetData(obj, 1,  i)),
+                        Foreigner      = Convert.ToInt64(GetData(obj, 2,  i)),
+                        Institution    = Convert.ToInt64(GetData(obj, 3,  i)),
+                        FinancialInvest= Convert.ToInt64(GetData(obj, 4,  i)),
+                        Insurance      = Convert.ToInt64(GetData(obj, 5,  i)),
+                        InvestTrust    = Convert.ToInt64(GetData(obj, 6,  i)),
+                        Bank           = Convert.ToInt64(GetData(obj, 7,  i)),
+                        OtherFinancial = Convert.ToInt64(GetData(obj, 8,  i)),
+                        PensionFund    = Convert.ToInt64(GetData(obj, 9,  i)),
+                        OtherCorp      = Convert.ToInt64(GetData(obj, 10, i)),
+                        ForeignerEtc   = Convert.ToInt64(GetData(obj, 11, i)),
+                        PrivateEquity  = Convert.ToInt64(GetData(obj, 12, i)),
+                        Government     = Convert.ToInt64(GetData(obj, 13, i)),
                     });
                 }
 
-                // 날짜 오름차순 정렬
                 result.Sort((a, b) => a.DateValue.CompareTo(b.DateValue));
-
                 progress?.Report($"[{stockCode}] 완료 ({result.Count}건)");
             }
             finally
@@ -139,50 +147,31 @@ namespace ShortSellingApp.Services
             return result;
         }
 
-        // ──────────────────────────────────────────────────────────────
-        // COM Interop 헬퍼
-        // ──────────────────────────────────────────────────────────────
-        private static void SetInputValue(object obj, int field, object value)
-        {
+        // ── COM 헬퍼 ─────────────────────────────────────────────────
+        private static void SetInput(object obj, int field, object value) =>
             obj.GetType().InvokeMember("SetInputValue",
-                System.Reflection.BindingFlags.InvokeMethod,
-                null, obj, new object[] { field, value });
-        }
+                System.Reflection.BindingFlags.InvokeMethod, null, obj,
+                new[] { (object)field, value });
 
-        private static void BlockRequest(object obj)
-        {
+        private static void BlockRequest(object obj) =>
             obj.GetType().InvokeMember("BlockRequest",
-                System.Reflection.BindingFlags.InvokeMethod,
-                null, obj, null);
-        }
+                System.Reflection.BindingFlags.InvokeMethod, null, obj, null);
 
-        private static object GetHeaderValue(object obj, int field)
-        {
-            return obj.GetType().InvokeMember("GetHeaderValue",
-                System.Reflection.BindingFlags.InvokeMethod,
-                null, obj, new object[] { field });
-        }
+        private static object GetHeader(object obj, int field) =>
+            obj.GetType().InvokeMember("GetHeaderValue",
+                System.Reflection.BindingFlags.InvokeMethod, null, obj, new object[] { field });
 
-        private static object GetDataValue(object obj, int field, int index)
-        {
-            return obj.GetType().InvokeMember("GetDataValue",
-                System.Reflection.BindingFlags.InvokeMethod,
-                null, obj, new object[] { field, index });
-        }
+        private static object GetData(object obj, int field, int row) =>
+            obj.GetType().InvokeMember("GetDataValue",
+                System.Reflection.BindingFlags.InvokeMethod, null, obj, new object[] { field, row });
 
-        private static object Invoke(object obj, string prop)
-        {
-            return obj.GetType().InvokeMember(prop,
-                System.Reflection.BindingFlags.GetProperty,
-                null, obj, null);
-        }
+        private static object GetProp(object obj, string prop) =>
+            obj.GetType().InvokeMember(prop,
+                System.Reflection.BindingFlags.GetProperty, null, obj, null);
 
-        private static object InvokeMethod(object obj, string method, params object[] args)
-        {
-            return obj.GetType().InvokeMember(method,
-                System.Reflection.BindingFlags.InvokeMethod,
-                null, obj, args);
-        }
+        private static object CallMethod(object obj, string method, params object[] args) =>
+            obj.GetType().InvokeMember(method,
+                System.Reflection.BindingFlags.InvokeMethod, null, obj, args);
 
         private static void Release(object obj)
         {

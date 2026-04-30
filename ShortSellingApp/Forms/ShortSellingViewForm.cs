@@ -9,41 +9,61 @@ using ShortSellingApp.Models;
 namespace ShortSellingApp.Forms
 {
     /// <summary>
-    /// 공매도 데이터 그래프 / 그리드 조회 폼
+    /// 투자주체별 매매현황 — 차트 / 그리드 조회 폼
     ///
-    /// 상단 ChartArea 1 (70%): 종가(꺾은선) + 공매도비중%(꺾은선, 우축)
-    /// 하단 ChartArea 2 (30%): 공매도거래량(막대, 우축 %)
+    /// ChartArea 1 (상단): 개인·외국인·기관계 꺾은선
+    /// ChartArea 2 (하단): 선택 항목 막대 비교
     /// </summary>
     public class ShortSellingViewForm : Form
     {
-        private readonly List<ShortSellingData> _data;
+        private readonly List<InvestorTradeData> _data;
         private readonly string _stockCode;
         private readonly string _stockName;
 
         // ── 컨트롤 ──────────────────────────────────────────────────
-        private Chart            chart;
-        private DataGridView     dgvData;
-        private SplitContainer   splitMain;       // 좌: 차트  우: 그리드
-        private ComboBox         cmbChartType;
-        private Panel            panelSummary;
-        private Label            lblSummaryValues;
-        private TabControl       tabControl;
+        private Chart        chart;
+        private DataGridView dgvData;
+        private TabControl   tabControl;
+        private ComboBox     cmbChartMode;
+        private CheckedListBox clbInvestors;
+        private Label        lblSummary;
 
-        // 차트 시리즈 이름
-        private const string SeriesClose       = "종가";
-        private const string SeriesShortRatio  = "공매도비중(%)";
-        private const string SeriesShortVolume = "공매도거래량";
-
-        public ShortSellingViewForm(List<ShortSellingData> data, string stockCode, string stockName)
+        // 투자자 항목 목록 (표시명, 속성접근자)
+        private static readonly (string Name, Func<InvestorTradeData, long> Get)[] InvestorDefs =
         {
-            _data       = data;
-            _stockCode  = stockCode;
-            _stockName  = string.IsNullOrEmpty(stockName) ? stockCode : stockName;
+            ("개인",        d => d.Individual),
+            ("외국인",      d => d.Foreigner),
+            ("기관계",      d => d.Institution),
+            ("금융투자",    d => d.FinancialInvest),
+            ("보험",        d => d.Insurance),
+            ("투신",        d => d.InvestTrust),
+            ("은행",        d => d.Bank),
+            ("기타금융",    d => d.OtherFinancial),
+            ("연기금",      d => d.PensionFund),
+            ("기타법인",    d => d.OtherCorp),
+            ("사모펀드",    d => d.PrivateEquity),
+            ("정부/지자체", d => d.Government),
+        };
+
+        // 시리즈 색상
+        private static readonly Color[] SeriesColors =
+        {
+            Color.DodgerBlue, Color.Crimson,     Color.SeaGreen,
+            Color.DarkOrange, Color.Purple,       Color.SaddleBrown,
+            Color.Teal,       Color.DarkSlateGray, Color.HotPink,
+            Color.OliveDrab,  Color.SteelBlue,   Color.DarkGoldenrod,
+        };
+
+        public ShortSellingViewForm(List<InvestorTradeData> data, string stockCode, string stockName)
+        {
+            _data      = data;
+            _stockCode = stockCode;
+            _stockName = string.IsNullOrEmpty(stockName) ? stockCode : stockName;
 
             InitializeComponent();
-            LoadSummary();
             BuildChart();
             PopulateGrid();
+            LoadSummary();
         }
 
         // ────────────────────────────────────────────────────────────
@@ -51,14 +71,15 @@ namespace ShortSellingApp.Forms
         // ────────────────────────────────────────────────────────────
         private void InitializeComponent()
         {
-            this.Text          = $"공매도 현황 차트 — {_stockName}({_stockCode})";
-            this.Size          = new Size(1280, 800);
-            this.MinimumSize   = new Size(1024, 640);
+            string unit = _data.Count > 0 ? _data[0].Unit : "";
+            this.Text          = $"투자주체별 매매현황 — {_stockName}({_stockCode})  [{unit}]";
+            this.Size          = new Size(1400, 860);
+            this.MinimumSize   = new Size(1100, 660);
             this.StartPosition = FormStartPosition.CenterParent;
             this.Font          = new Font("맑은 고딕", 9f);
             this.BackColor     = Color.WhiteSmoke;
 
-            // ── 상단 툴바 패널 ─────────────────────────────────────
+            // ── 상단 툴바 ─────────────────────────────────────────
             var panelTop = new Panel
             {
                 Dock      = DockStyle.Top,
@@ -71,55 +92,103 @@ namespace ShortSellingApp.Forms
 
             var lblTitle = new Label
             {
-                Text      = $"[{_stockName}] 공매도 현황 추이  ({_data.First().Date} ~ {_data.Last().Date})",
+                Text      = $"[{_stockName}] 투자주체별 매매현황  " +
+                            $"({_data.First().Date} ~ {_data.Last().Date})",
                 Font      = new Font("맑은 고딕", 10f, FontStyle.Bold),
                 ForeColor = Color.DarkSlateBlue,
                 AutoSize  = true,
                 Location  = new Point(10, 12),
             };
 
-            var lblChartType = new Label { Text = "차트 유형:", AutoSize = true, Location = new Point(550, 14) };
+            new Label { Text = "차트 유형:", AutoSize = true, Location = new Point(520, 14), Parent = panelTop };
 
-            cmbChartType = new ComboBox
+            cmbChartMode = new ComboBox
             {
-                Location      = new Point(615, 10),
-                Width         = 140,
+                Location      = new Point(582, 10),
+                Width         = 160,
                 DropDownStyle = ComboBoxStyle.DropDownList,
+                Parent        = panelTop,
             };
-            cmbChartType.Items.AddRange(new object[]
+            cmbChartMode.Items.AddRange(new object[]
             {
-                "종가 + 공매도비중",
-                "공매도거래량 + 비중",
-                "공매도거래대금 + 비중",
-                "모두 표시",
+                "꺾은선 (개인/외국인/기관)",
+                "막대 비교 (선택 항목)",
+                "누적 막대",
+                "누적 영역",
             });
-            cmbChartType.SelectedIndex  = 0;
-            cmbChartType.SelectedIndexChanged += (s, e) => BuildChart();
+            cmbChartMode.SelectedIndex         = 0;
+            cmbChartMode.SelectedIndexChanged += (s, e) => BuildChart();
 
-            var btnRefresh = MakeButton("차트 갱신", new Point(762, 9), 80, Color.SteelBlue);
+            var btnRefresh = new Button
+            {
+                Text      = "갱신",
+                Location  = new Point(750, 9),
+                Width     = 60,
+                Height    = 26,
+                BackColor = Color.SteelBlue,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font      = new Font("맑은 고딕", 9f, FontStyle.Bold),
+                Parent    = panelTop,
+            };
             btnRefresh.Click += (s, e) => BuildChart();
 
-            panelTop.Controls.AddRange(new Control[]
-                { lblTitle, lblChartType, cmbChartType, btnRefresh });
+            panelTop.Controls.Add(lblTitle);
 
-            // ── 요약 패널 ──────────────────────────────────────────
-            panelSummary = new Panel
+            // ── 요약 레이블 ───────────────────────────────────────
+            var panelSummary = new Panel
             {
                 Dock      = DockStyle.Top,
-                Height    = 38,
+                Height    = 32,
                 BackColor = Color.FromArgb(240, 248, 255),
                 Padding   = new Padding(10, 6, 10, 0),
             };
-            lblSummaryValues = new Label
+            lblSummary = new Label
             {
                 Dock      = DockStyle.Fill,
-                AutoSize  = false,
-                ForeColor = Color.DarkSlateGray,
                 Font      = new Font("맑은 고딕", 8.5f),
+                ForeColor = Color.DarkSlateGray,
+                AutoSize  = false,
             };
-            panelSummary.Controls.Add(lblSummaryValues);
+            panelSummary.Controls.Add(lblSummary);
 
-            // ── TabControl: 차트 / 그리드 ──────────────────────────
+            // ── 좌측 투자자 체크박스 패널 ─────────────────────────
+            var panelLeft = new Panel
+            {
+                Dock      = DockStyle.Left,
+                Width     = 120,
+                BackColor = Color.White,
+                Padding   = new Padding(6),
+            };
+            panelLeft.Paint += (s, e) =>
+                e.Graphics.DrawLine(Pens.LightGray, panelLeft.Width - 1, 0,
+                                    panelLeft.Width - 1, panelLeft.Height);
+
+            var lblCheck = new Label
+            {
+                Text     = "표시 항목",
+                Font     = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
+                Dock     = DockStyle.Top,
+                Height   = 22,
+                TextAlign = ContentAlignment.MiddleCenter,
+            };
+
+            clbInvestors = new CheckedListBox
+            {
+                Dock          = DockStyle.Fill,
+                CheckOnClick  = true,
+                BorderStyle   = BorderStyle.None,
+                Font          = new Font("맑은 고딕", 8.5f),
+                BackColor     = Color.White,
+            };
+            foreach (var (name, _) in InvestorDefs)
+                clbInvestors.Items.Add(name, name == "개인" || name == "외국인" || name == "기관계");
+            clbInvestors.ItemCheck += (s, e) => this.BeginInvoke((Action)BuildChart);
+
+            panelLeft.Controls.Add(clbInvestors);
+            panelLeft.Controls.Add(lblCheck);
+
+            // ── TabControl ────────────────────────────────────────
             tabControl = new TabControl { Dock = DockStyle.Fill };
 
             var tabChart = new TabPage("차트");
@@ -127,35 +196,17 @@ namespace ShortSellingApp.Forms
             tabChart.Controls.Add(chart);
 
             var tabGrid = new TabPage("데이터 그리드");
-            dgvData = BuildDataGridView();
+            dgvData = BuildGrid();
             tabGrid.Controls.Add(dgvData);
 
             tabControl.TabPages.Add(tabChart);
             tabControl.TabPages.Add(tabGrid);
 
-            // ── 레이아웃 조립 ──────────────────────────────────────
+            // ── 레이아웃 ──────────────────────────────────────────
             this.Controls.Add(tabControl);
+            this.Controls.Add(panelLeft);
             this.Controls.Add(panelSummary);
             this.Controls.Add(panelTop);
-        }
-
-        // ────────────────────────────────────────────────────────────
-        // 요약 통계
-        // ────────────────────────────────────────────────────────────
-        private void LoadSummary()
-        {
-            double avgRatio  = _data.Average(d => d.ShortRatio);
-            double maxRatio  = _data.Max(d => d.ShortRatio);
-            long   totalVol  = _data.Sum(d => d.ShortVolume);
-            int    maxClose  = _data.Max(d => d.ClosePrice);
-            int    minClose  = _data.Min(d => d.ClosePrice);
-
-            lblSummaryValues.Text =
-                $"기간: {_data.Count}일   " +
-                $"평균 공매도비중: {avgRatio:F2}%   " +
-                $"최고 공매도비중: {maxRatio:F2}%   " +
-                $"누적 공매도거래량: {totalVol:N0}주   " +
-                $"종가범위: {minClose:N0} ~ {maxClose:N0}원";
         }
 
         // ────────────────────────────────────────────────────────────
@@ -167,159 +218,134 @@ namespace ShortSellingApp.Forms
             chart.ChartAreas.Clear();
             chart.Legends.Clear();
 
-            int mode = cmbChartType.SelectedIndex; // 0~3
+            int mode = cmbChartMode.SelectedIndex;
 
-            // ── ChartArea 1: 가격/비중 메인 차트 ──────────────────
-            var area1 = new ChartArea("Area1");
-            StyleArea(area1);
+            // 체크된 항목
+            var selected = new List<(string Name, Func<InvestorTradeData, long> Get, Color Color)>();
+            for (int i = 0; i < clbInvestors.Items.Count; i++)
+            {
+                if (clbInvestors.GetItemChecked(i))
+                    selected.Add((InvestorDefs[i].Name, InvestorDefs[i].Get, SeriesColors[i]));
+            }
+            if (selected.Count == 0) return;
+
+            // ── 상단 ChartArea: 주요 추이 ─────────────────────────
+            var area1 = MakeArea("Area1");
             area1.AxisX.LabelStyle.Format = "MM/dd";
-            area1.AxisX.MajorGrid.LineColor = Color.FromArgb(40, 0, 0, 0);
-            area1.AxisY.Title              = mode == 0 ? "종가 (원)" : "공매도거래량 (주)";
-            area1.AxisY.LabelStyle.Format  = "N0";
-            area1.AxisY2.Enabled           = AxisEnabled.True;
-            area1.AxisY2.Title             = "공매도비중 (%)";
-            area1.AxisY2.LabelStyle.Format = "F2";
-            area1.AxisY2.MajorGrid.Enabled = false;
-            area1.Position = new ElementPosition(0, 5, 100, 65);
-
-            // ── ChartArea 2: 공매도 거래량 막대 ──────────────────
-            var area2 = new ChartArea("Area2");
-            StyleArea(area2);
-            area2.AxisX.LabelStyle.Format = "MM/dd";
-            area2.AxisY.Title             = "공매도거래량 (주)";
-            area2.AxisY.LabelStyle.Format = "N0";
-            area2.AlignWithChartArea      = "Area1";
-            area2.AlignmentOrientation    = AreaAlignmentOrientations.Vertical;
-            area2.AlignmentStyle          = AreaAlignmentStyles.All;
-            area2.Position = new ElementPosition(0, 73, 100, 24);
-
+            area1.AxisY.Title             = _data.Count > 0 ? _data[0].Unit : "";
+            area1.AxisY.LabelStyle.Format = "N0";
+            area1.AxisY.StripLines.Add(new StripLine
+            {
+                Interval     = 0,
+                IntervalOffset = 0,
+                StripWidth   = 0.001,
+                BackColor    = Color.Black,
+            });
+            area1.Position = new ElementPosition(0, 5, 100, 60);
             chart.ChartAreas.Add(area1);
+
+            // ── 하단 ChartArea: 막대 비교 ─────────────────────────
+            var area2 = MakeArea("Area2");
+            area2.AxisX.LabelStyle.Format  = "MM/dd";
+            area2.AxisY.LabelStyle.Format  = "N0";
+            area2.AlignWithChartArea       = "Area1";
+            area2.AlignmentOrientation     = AreaAlignmentOrientations.Vertical;
+            area2.AlignmentStyle           = AreaAlignmentStyles.All;
+            area2.Position = new ElementPosition(0, 68, 100, 28);
             chart.ChartAreas.Add(area2);
 
             // ── 범례 ──────────────────────────────────────────────
             var legend = new Legend
             {
-                Docking          = Docking.Top,
-                Alignment        = StringAlignment.Center,
-                BackColor        = Color.Transparent,
-                Font             = new Font("맑은 고딕", 8.5f),
+                Docking   = Docking.Top,
+                Alignment = StringAlignment.Center,
+                BackColor = Color.Transparent,
+                Font      = new Font("맑은 고딕", 8.5f),
                 IsDockedInsideChartArea = false,
             };
             chart.Legends.Add(legend);
 
-            // ── 시리즈: 종가 ──────────────────────────────────────
-            if (mode == 0 || mode == 3)
+            // ── 시리즈 추가 ───────────────────────────────────────
+            SeriesChartType upperType = mode == 0 ? SeriesChartType.Line
+                                      : mode == 2 ? SeriesChartType.StackedColumn
+                                      : mode == 3 ? SeriesChartType.StackedArea
+                                      : SeriesChartType.Column;
+
+            foreach (var (name, get, color) in selected)
             {
-                var sClose = new Series(SeriesClose)
+                // 상단 시리즈
+                var s1 = new Series(name)
                 {
-                    ChartType   = SeriesChartType.Line,
+                    ChartType   = upperType,
                     ChartArea   = "Area1",
-                    YAxisType   = AxisType.Primary,
-                    Color       = Color.DodgerBlue,
+                    Color       = color,
                     BorderWidth = 2,
                     IsVisibleInLegend = true,
                 };
+                if (upperType == SeriesChartType.Line)
+                    s1["EmptyPointValue"] = "Zero";
                 foreach (var d in _data)
-                    sClose.Points.AddXY(d.DateValue, d.ClosePrice);
-                chart.Series.Add(sClose);
-            }
+                    s1.Points.AddXY(d.DateValue, get(d));
+                chart.Series.Add(s1);
 
-            // ── 시리즈: 공매도 거래대금 ───────────────────────────
-            if (mode == 2 || mode == 3)
-            {
-                var sAmt = new Series("공매도거래대금(백만원)")
+                // 하단 막대 시리즈 (Column 고정)
+                var s2 = new Series(name + "_bar")
                 {
-                    ChartType   = SeriesChartType.Column,
-                    ChartArea   = "Area1",
-                    YAxisType   = AxisType.Primary,
-                    Color       = Color.FromArgb(160, 255, 140, 0),
-                    IsVisibleInLegend = true,
+                    ChartType         = SeriesChartType.Column,
+                    ChartArea         = "Area2",
+                    Color             = Color.FromArgb(160, color),
+                    IsVisibleInLegend = false,
                 };
                 foreach (var d in _data)
-                    sAmt.Points.AddXY(d.DateValue, d.ShortAmount / 1_000_000);
-                chart.Series.Add(sAmt);
+                    s2.Points.AddXY(d.DateValue, get(d));
+                chart.Series.Add(s2);
             }
 
-            // ── 시리즈: 공매도 비중 (공통 — Area1 우축) ──────────
-            var sRatio = new Series(SeriesShortRatio)
+            // 기준선 (0)
+            area1.AxisY.StripLines.Clear();
+            area1.AxisY.StripLines.Add(new StripLine
             {
-                ChartType   = SeriesChartType.Line,
-                ChartArea   = "Area1",
-                YAxisType   = AxisType.Secondary,
-                Color       = Color.Crimson,
-                BorderWidth = 2,
-                BorderDashStyle = ChartDashStyle.Dash,
-                IsVisibleInLegend = true,
-            };
-            foreach (var d in _data)
-                sRatio.Points.AddXY(d.DateValue, d.ShortRatio);
-            chart.Series.Add(sRatio);
-
-            // ── 시리즈: 공매도 거래량 (Area2) ─────────────────────
-            var sVol = new Series(SeriesShortVolume)
-            {
-                ChartType   = SeriesChartType.Column,
-                ChartArea   = "Area2",
-                YAxisType   = AxisType.Primary,
-                Color       = Color.FromArgb(180, 70, 130, 180),
-                IsVisibleInLegend = true,
-            };
-            foreach (var d in _data)
-                sVol.Points.AddXY(d.DateValue, d.ShortVolume);
-            chart.Series.Add(sVol);
-
-            // 이동평균선 (5일) — 공매도 비중
-            if (_data.Count >= 5)
-            {
-                var sMa5 = new Series("공매도비중 MA5")
-                {
-                    ChartType   = SeriesChartType.Line,
-                    ChartArea   = "Area1",
-                    YAxisType   = AxisType.Secondary,
-                    Color       = Color.DarkOrange,
-                    BorderWidth = 1,
-                    BorderDashStyle = ChartDashStyle.Dot,
-                    IsVisibleInLegend = true,
-                };
-                for (int i = 4; i < _data.Count; i++)
-                {
-                    double avg = _data.Skip(i - 4).Take(5).Average(d => d.ShortRatio);
-                    sMa5.Points.AddXY(_data[i].DateValue, avg);
-                }
-                chart.Series.Add(sMa5);
-            }
+                Interval       = 0,
+                IntervalOffset = 0,
+                StripWidth     = 0.0001,
+                BackColor      = Color.DimGray,
+            });
         }
 
-        private static void StyleArea(ChartArea area)
+        private static ChartArea MakeArea(string name)
         {
-            area.BackColor          = Color.White;
-            area.BorderColor        = Color.LightGray;
+            var area = new ChartArea(name)
+            {
+                BackColor    = Color.White,
+                BorderColor  = Color.LightGray,
+            };
             area.AxisX.MajorGrid.LineColor = Color.FromArgb(30, 0, 0, 0);
             area.AxisY.MajorGrid.LineColor = Color.FromArgb(30, 0, 0, 0);
             area.AxisX.LabelStyle.Font     = new Font("맑은 고딕", 7.5f);
             area.AxisY.LabelStyle.Font     = new Font("맑은 고딕", 7.5f);
+            return area;
         }
 
         // ────────────────────────────────────────────────────────────
         // 데이터 그리드
         // ────────────────────────────────────────────────────────────
-        private DataGridView BuildDataGridView()
+        private DataGridView BuildGrid()
         {
             var grid = new DataGridView
             {
-                Dock              = DockStyle.Fill,
-                ReadOnly          = true,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                AllowUserToAddRows = false,
-                RowHeadersVisible = false,
-                SelectionMode     = DataGridViewSelectionMode.FullRowSelect,
-                BackgroundColor   = Color.White,
-                BorderStyle       = BorderStyle.None,
-                GridColor         = Color.LightGray,
+                Dock                    = DockStyle.Fill,
+                ReadOnly                = true,
+                AutoSizeColumnsMode     = DataGridViewAutoSizeColumnsMode.Fill,
+                AllowUserToAddRows      = false,
+                RowHeadersVisible       = false,
+                SelectionMode           = DataGridViewSelectionMode.FullRowSelect,
+                BackgroundColor         = Color.White,
+                BorderStyle             = BorderStyle.None,
+                GridColor               = Color.LightGray,
                 AlternatingRowsDefaultCellStyle = new DataGridViewCellStyle { BackColor = Color.AliceBlue },
                 ColumnHeadersDefaultCellStyle   = new DataGridViewCellStyle
                 {
-                    Font      = new Font("맑은 고딕", 9f, FontStyle.Bold),
+                    Font      = new Font("맑은 고딕", 8.5f, FontStyle.Bold),
                     BackColor = Color.FromArgb(50, 100, 150),
                     ForeColor = Color.White,
                     Alignment = DataGridViewContentAlignment.MiddleCenter,
@@ -327,78 +353,78 @@ namespace ShortSellingApp.Forms
                 EnableHeadersVisualStyles = false,
             };
 
-            var cols = new (string name, string header, string fmt, int fill, DataGridViewContentAlignment align)[]
-            {
-                ("Date",        "날짜",               "",    70,  DataGridViewContentAlignment.MiddleCenter),
-                ("ShortVol",    "공매도거래량(주)",    "N0",  110, DataGridViewContentAlignment.MiddleRight),
-                ("ShortAmt",    "공매도거래대금(백만원)", "N0", 130, DataGridViewContentAlignment.MiddleRight),
-                ("ShortRatio",  "공매도비중(%)",       "F2",  90,  DataGridViewContentAlignment.MiddleRight),
-                ("ClosePrice",  "종가(원)",            "N0",  85,  DataGridViewContentAlignment.MiddleRight),
-                ("TotalVol",    "총거래량(주)",        "N0",  110, DataGridViewContentAlignment.MiddleRight),
-                ("VolumeRatio", "공매도/총거래(%)",    "F2",  110, DataGridViewContentAlignment.MiddleRight),
-            };
+            var headers = new[] { "날짜", "개인", "외국인", "기관계", "금융투자",
+                                   "보험", "투신", "은행", "기타금융", "연기금",
+                                   "기타법인", "사모펀드", "정부/지자체" };
 
-            foreach (var (name, header, fmt, fill, align) in cols)
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                HeaderText = headers[0],
+                DefaultCellStyle = new DataGridViewCellStyle
+                    { Alignment = DataGridViewContentAlignment.MiddleCenter },
+                FillWeight = 70,
+            });
+            for (int i = 1; i < headers.Length; i++)
             {
                 grid.Columns.Add(new DataGridViewTextBoxColumn
                 {
-                    Name       = name,
-                    HeaderText = header,
+                    HeaderText = headers[i],
                     DefaultCellStyle = new DataGridViewCellStyle
                     {
-                        Format    = fmt,
-                        Alignment = align,
+                        Alignment = DataGridViewContentAlignment.MiddleRight,
+                        Format    = "N0",
                     },
-                    FillWeight = fill,
+                    FillWeight = 75,
                 });
             }
-
-            foreach (var d in _data)
-            {
-                double volRatio = d.TotalVolume > 0
-                    ? (double)d.ShortVolume / d.TotalVolume * 100
-                    : 0;
-
-                int idx = grid.Rows.Add(
-                    d.Date,
-                    d.ShortVolume,
-                    d.ShortAmount / 1_000_000,
-                    d.ShortRatio,
-                    d.ClosePrice,
-                    d.TotalVolume,
-                    volRatio);
-
-                // 공매도비중 5% 이상 강조
-                if (d.ShortRatio >= 5.0)
-                {
-                    grid.Rows[idx].DefaultCellStyle.BackColor = Color.MistyRose;
-                    grid.Rows[idx].DefaultCellStyle.ForeColor = Color.DarkRed;
-                }
-            }
-
-            // 정렬 기준: 날짜 내림차순 (최신 순)
-            grid.Sort(grid.Columns["Date"], System.ComponentModel.ListSortDirection.Descending);
 
             return grid;
         }
 
-        // ────────────────────────────────────────────────────────────
-        // 헬퍼
-        // ────────────────────────────────────────────────────────────
-        private static Button MakeButton(string text, Point loc, int width, Color back)
+        private void PopulateGrid()
         {
-            return new Button
+            dgvData.Rows.Clear();
+            // 최신 날짜 순 표시
+            var sorted = _data.OrderByDescending(d => d.DateValue).ToList();
+            foreach (var d in sorted)
             {
-                Text      = text,
-                Location  = loc,
-                Width     = width,
-                Height    = 26,
-                BackColor = back,
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font      = new Font("맑은 고딕", 9f, FontStyle.Bold),
-                Cursor    = Cursors.Hand,
-            };
+                int idx = dgvData.Rows.Add(
+                    d.Date, d.Individual, d.Foreigner, d.Institution,
+                    d.FinancialInvest, d.Insurance, d.InvestTrust, d.Bank,
+                    d.OtherFinancial, d.PensionFund, d.OtherCorp,
+                    d.PrivateEquity, d.Government);
+
+                // 외국인 순매수 상위 강조
+                if (d.Foreigner > 0)
+                {
+                    dgvData.Rows[idx].Cells[2].Style.ForeColor  = Color.DarkBlue;
+                    dgvData.Rows[idx].Cells[2].Style.Font =
+                        new Font("맑은 고딕", 8.5f, FontStyle.Bold);
+                }
+                else if (d.Foreigner < 0)
+                {
+                    dgvData.Rows[idx].Cells[2].Style.ForeColor = Color.Crimson;
+                }
+            }
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // 요약 통계
+        // ────────────────────────────────────────────────────────────
+        private void LoadSummary()
+        {
+            if (_data.Count == 0) return;
+            long sumInd = _data.Sum(d => d.Individual);
+            long sumFor = _data.Sum(d => d.Foreigner);
+            long sumIns = _data.Sum(d => d.Institution);
+            string unit = _data[0].Unit;
+
+            lblSummary.Text =
+                $"기간: {_data.Count}일   " +
+                $"개인 누적: {sumInd:N0}   " +
+                $"외국인 누적: {sumFor:N0}   " +
+                $"기관계 누적: {sumIns:N0}   " +
+                $"단위: {unit}";
         }
     }
 }
