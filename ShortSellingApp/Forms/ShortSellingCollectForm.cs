@@ -9,7 +9,7 @@ using ShortSellingApp.Services;
 namespace ShortSellingApp.Forms
 {
     /// <summary>
-    /// 투자주체별 매매현황 데이터 수집 폼 (CpSysDib.CpSvr7254)
+    /// 공매도 현황 데이터 수집 폼 (CpSysDib.CpSvr7238)
     /// </summary>
     public class ShortSellingCollectForm : Form
     {
@@ -43,7 +43,7 @@ namespace ShortSellingApp.Forms
         // ────────────────────────────────────────────────────────────
         private void InitializeComponent()
         {
-            this.Text          = "공매도 현황 수집 (투자주체별) - 대신플러스 CpSvr7254";
+            this.Text          = "공매도 현황 수집 (투자주체별) - 대신플러스 CpSvr7238";
             this.Size          = new Size(1200, 720);
             this.MinimumSize   = new Size(1000, 600);
             this.StartPosition = FormStartPosition.CenterScreen;

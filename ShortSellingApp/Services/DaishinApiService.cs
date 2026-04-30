@@ -45,7 +45,11 @@ namespace ShortSellingApp.Services
             catch { return stockCode; }
         }
 
-        // ── 공매도 현황 수집 — 투자주체별 (CpSysDib.CpSvr7254) ─────────
+        // ── 공매도 현황 수집 (CpSysDib.CpSvr7238) ───────────────────────
+        //
+        // ※ 아래 필드 정의는 CpSvr7238 기준 초기값입니다.
+        //   실제 CpSvr7238 입출력 필드는 CYBOS Plus HTS 도움말에서
+        //   "CpSvr7238" 검색 후 확인하여 수정하세요.
         //
         // SetInputValue
         //   0  string  종목코드          예) "A005930"
@@ -54,11 +58,8 @@ namespace ShortSellingApp.Services
         //   2  long    시작일자          YYYYMMDD (기간구분=0 일 때)
         //   3  long    종료일자          YYYYMMDD (기간구분=0 일 때)
         //   4  char    매매구분          '0'=순매수, '1'=매매비중
-        //   5  short   투자자구분        0=전체, 1=개인, 2=외국인, 3=기관계,
-        //                                4=금융투자, 5=보험, 6=투신, 7=은행,
-        //                                8=기타금융, 9=연기금, 10=기타법인,
-        //                                11=외국인기타, 12=사모펀드, 13=정부/지자체
-        //   6  char    데이터구분        '1'=순매수수량(주), '2'=추정금액(백만원)
+        //   5  short   투자자구분        0=전체, 1=개인, 2=외국인, 3=기관계, ...
+        //   6  char    데이터구분        '1'=수량(주), '2'=금액(백만원)
         //
         // GetHeaderValue(3) → 행 수
         //
@@ -79,16 +80,16 @@ namespace ShortSellingApp.Services
         {
             var result = new List<InvestorTradeData>();
 
-            Type t = Type.GetTypeFromProgID("CpSysDib.CpSvr7254");
+            Type t = Type.GetTypeFromProgID("CpSysDib.CpSvr7238");
             if (t == null)
                 throw new InvalidOperationException(
-                    "CpSysDib.CpSvr7254 COM 오브젝트를 찾을 수 없습니다.\n" +
+                    "CpSysDib.CpSvr7238 COM 오브젝트를 찾을 수 없습니다.\n" +
                     "CYBOS Plus HTS가 실행 중인지 확인하십시오.");
 
             object obj = Activator.CreateInstance(t);
             try
             {
-                progress?.Report($"[{stockCode}] 투자주체별 매매현황 요청 ({fromDate}~{toDate}) ...");
+                progress?.Report($"[{stockCode}] 공매도 현황 요청 CpSvr7238 ({fromDate}~{toDate}) ...");
 
                 SetInput(obj, 0, stockCode);
                 SetInput(obj, 1, (short)0);      // 직접입력
