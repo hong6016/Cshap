@@ -72,7 +72,7 @@ namespace ShortSellingApp.Forms
         private void InitializeComponent()
         {
             string unit = _data.Count > 0 ? _data[0].Unit : "";
-            this.Text          = $"투자주체별 매매현황 — {_stockName}({_stockCode})  [{unit}]";
+            this.Text          = $"공매도 현황 (투자주체별) — {_stockName}({_stockCode})  [{unit}]";
             this.Size          = new Size(1400, 860);
             this.MinimumSize   = new Size(1100, 660);
             this.StartPosition = FormStartPosition.CenterParent;
@@ -92,7 +92,7 @@ namespace ShortSellingApp.Forms
 
             var lblTitle = new Label
             {
-                Text      = $"[{_stockName}] 투자주체별 매매현황  " +
+                Text      = $"[{_stockName}] 공매도 현황 추이 (투자주체별)  " +
                             $"({_data.First().Date} ~ {_data.Last().Date})",
                 Font      = new Font("맑은 고딕", 10f, FontStyle.Bold),
                 ForeColor = Color.DarkSlateBlue,
@@ -353,8 +353,8 @@ namespace ShortSellingApp.Forms
                 EnableHeadersVisualStyles = false,
             };
 
-            var headers = new[] { "날짜", "개인", "외국인", "기관계", "금융투자",
-                                   "보험", "투신", "은행", "기타금융", "연기금",
+            var headers = new[] { "날짜", "개인(공매도)", "외국인(공매도)", "기관계(공매도)",
+                                   "금융투자", "보험", "투신", "은행", "기타금융", "연기금",
                                    "기타법인", "사모펀드", "정부/지자체" };
 
             grid.Columns.Add(new DataGridViewTextBoxColumn
@@ -421,9 +421,9 @@ namespace ShortSellingApp.Forms
 
             lblSummary.Text =
                 $"기간: {_data.Count}일   " +
-                $"개인 누적: {sumInd:N0}   " +
-                $"외국인 누적: {sumFor:N0}   " +
-                $"기관계 누적: {sumIns:N0}   " +
+                $"개인 공매도 누적: {sumInd:N0}   " +
+                $"외국인 공매도 누적: {sumFor:N0}   " +
+                $"기관계 공매도 누적: {sumIns:N0}   " +
                 $"단위: {unit}";
         }
     }

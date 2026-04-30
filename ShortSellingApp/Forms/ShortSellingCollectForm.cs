@@ -43,7 +43,7 @@ namespace ShortSellingApp.Forms
         // ────────────────────────────────────────────────────────────
         private void InitializeComponent()
         {
-            this.Text          = "투자주체별 매매현황 수집 - 대신플러스 (CpSvr7254)";
+            this.Text          = "공매도 현황 수집 (투자주체별) - 대신플러스 CpSvr7254";
             this.Size          = new Size(1200, 720);
             this.MinimumSize   = new Size(1000, 600);
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -136,7 +136,7 @@ namespace ShortSellingApp.Forms
                 Width         = 130,
                 DropDownStyle = ComboBoxStyle.DropDownList,
             };
-            cmbDataType.Items.AddRange(new object[] { "순매수수량(주)", "추정금액(백만원)" });
+            cmbDataType.Items.AddRange(new object[] { "공매도수량(주)", "공매도금액(백만원)" });
             cmbDataType.SelectedIndex = 0;
             panelTop.Controls.Add(cmbDataType);
 
@@ -306,8 +306,8 @@ namespace ShortSellingApp.Forms
                     PopulateGrid(data);
                     btnViewChart.Enabled = data.Count > 0;
                     btnExportCsv.Enabled = data.Count > 0;
-                    SetStatus($"수집 완료 — {data.Count}건 ({fromDate} ~ {toDate})  " +
-                              $"단위: {(dataType == '1' ? "순매수수량(주)" : "추정금액(백만원)")}");
+                    SetStatus($"공매도 수집 완료 — {data.Count}건 ({fromDate} ~ {toDate})  " +
+                              $"단위: {(dataType == '1' ? "공매도수량(주)" : "공매도금액(백만원)")}");
 
                     if (string.IsNullOrEmpty(txtStockName.Text) || txtStockName.Text == code)
                         txtStockName.Text = _api.GetStockName(code);
@@ -335,7 +335,7 @@ namespace ShortSellingApp.Forms
             {
                 Title    = "CSV 내보내기",
                 Filter   = "CSV 파일 (*.csv)|*.csv",
-                FileName = $"투자주체_{txtStockCode.Text.Trim()}_{DateTime.Today:yyyyMMdd}.csv",
+                FileName = $"공매도현황_{txtStockCode.Text.Trim()}_{DateTime.Today:yyyyMMdd}.csv",
             })
             {
                 if (dlg.ShowDialog() != DialogResult.OK) return;
@@ -345,7 +345,7 @@ namespace ShortSellingApp.Forms
                         dlg.FileName, false, System.Text.Encoding.UTF8))
                     {
                         string unit = _collectedData.Count > 0 ? _collectedData[0].Unit : "";
-                        sw.WriteLine($"날짜,개인,외국인,기관계,금융투자,보험,투신,은행," +
+                        sw.WriteLine($"날짜,개인(공매도),외국인(공매도),기관계(공매도),금융투자,보험,투신,은행," +
                                      $"기타금융,연기금,기타법인,사모펀드,정부/지자체  [{unit}]");
                         foreach (var d in _collectedData)
                             sw.WriteLine($"{d.Date},{d.Individual},{d.Foreigner}," +

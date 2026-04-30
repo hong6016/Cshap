@@ -45,7 +45,7 @@ namespace ShortSellingApp.Services
             catch { return stockCode; }
         }
 
-        // ── 투자주체별 매매현황 수집 (CpSysDib.CpSvr7254) ───────────
+        // ── 공매도 현황 수집 — 투자주체별 (CpSysDib.CpSvr7254) ─────────
         //
         // SetInputValue
         //   0  string  종목코드          예) "A005930"

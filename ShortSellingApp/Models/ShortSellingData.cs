@@ -3,7 +3,7 @@ using System;
 namespace ShortSellingApp.Models
 {
     /// <summary>
-    /// CpSysDib.CpSvr7254 — 투자주체별 매매현황 1행 데이터
+    /// CpSysDib.CpSvr7254 — 공매도 현황 (투자주체별) 1행 데이터
     /// </summary>
     public class InvestorTradeData
     {
